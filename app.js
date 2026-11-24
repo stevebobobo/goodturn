@@ -291,8 +291,9 @@ setInterval(() => {
   if ($('#tail').hidden) return;
   const s = T.state;
   const L = $('#arrowL'), R = $('#arrowR');
-  L.hidden = !(s === 'left' || s === 'hazard');
-  R.hidden = !(s === 'right' || s === 'hazard');
+  // SVG 元素沒有 .hidden 屬性，要直接改 hidden 屬性標籤
+  L.toggleAttribute('hidden', !(s === 'left' || s === 'hazard'));
+  R.toggleAttribute('hidden', !(s === 'right' || s === 'hazard'));
   $('#pos').hidden = s !== 'off';
   const lit = T.phase < 3 ? T.phase + 1 : (T.phase === 3 ? 3 : 0);
   for (const svg of [L, R]) for (const p of svg.querySelectorAll('path')) p.classList.toggle('lit', +p.dataset.i < lit);
