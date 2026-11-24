@@ -84,11 +84,11 @@ button{font-family:var(--f);color:inherit}
 #tPair{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#000;text-align:center;padding:20px}
 #tPair .code{font-size:clamp(4rem,22vw,9rem);font-weight:900;letter-spacing:.12em;color:var(--amber);line-height:1}
 #tPair p{margin:0;color:var(--mute);font-size:1.05rem}
-#cam{position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;width:min(46vw,320px);border:2px solid var(--green);border-radius:8px;overflow:hidden;background:#111}
+#cam{position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;width:min(46vw,320px,calc((100vh - 100px) * 4 / 3));border:2px solid var(--green);border-radius:8px;overflow:hidden;background:#111}
 #cam video,#cam canvas{display:block;width:100%;height:auto}
 #cam canvas{position:absolute;inset:0;height:100%}
 #cam video{transform:scaleX(-1)}
-#cam .lbl{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);font-size:.75rem;padding:3px 6px;color:var(--green)}
+#cam .lbl{position:absolute;left:0;right:0;top:0;background:rgba(0,0,0,.7);font-size:.75rem;padding:3px 6px;color:var(--green)}
 
 /* ── 開始按鈕（取得聲音、螢幕常亮、感測器權限都需要一次點擊） ── */
 .gate{position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;z-index:5}
@@ -160,6 +160,6 @@ button{font-family:var(--f);color:inherit}
 <div id="toast" hidden></div>
 
 <script src="mqtt.min.js"></script>
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
