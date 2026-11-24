@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>好轉燈</title>
+<style>
+/* 戶外使用：全黑底最省電、對比最高；琥珀色＝方向燈，紅色＝尾燈／警告 */
+:root{
+  --bg:#000; --ink:#f4f4f4; --mute:#9a9a9a; --line:#2a2a2a; --panel:#111;
+  --amber:#ffb000; --amber-dim:#3a2800; --red:#ff2a1a; --red-dim:#2a0603; --green:#3ddc84;
+  --f:"Noto Sans TC","Microsoft JhengHei","PingFang TC",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:var(--f);overscroll-behavior:none}
+body{user-select:none;-webkit-user-select:none;touch-action:manipulation}
+section{position:fixed;inset:0;display:flex;flex-direction:column;
+  padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
+[hidden]{display:none!important}
+button{font-family:var(--f);color:inherit}
+
+/* ── 首頁 ── */
+#home{justify-content:center;align-items:center;gap:22px;padding-inline:max(20px,env(safe-area-inset-left,0px))}
+#home h1{margin:0;font-size:2.6rem;letter-spacing:.12em;color:var(--amber)}
+#home p.sub{margin:-12px 0 6px;color:var(--mute);text-align:center;line-height:1.6}
+.big{width:min(420px,100%);border:2px solid var(--line);background:var(--panel);padding:22px 18px;font-size:1.35rem;font-weight:700;border-radius:14px;display:flex;flex-direction:column;gap:4px;text-align:left;cursor:pointer}
+.big small{font-size:.9rem;font-weight:400;color:var(--mute)}
+.big.ctrl{border-color:var(--amber)}
+.big.tail{border-color:var(--red)}
+.big:active{transform:scale(.98)}
+#resume{border-style:dashed}
+
+/* ── 配對 ── */
+#pair{align-items:center;justify-content:center;gap:18px;padding-inline:20px}
+#pair h2{margin:0;font-size:1.3rem}
+#pair p{margin:0;color:var(--mute);text-align:center}
+#digits{display:flex;gap:10px}
+#digits span{width:58px;height:72px;border:2px solid var(--line);border-radius:10px;display:grid;place-items:center;font-size:2.4rem;font-weight:700;color:var(--amber)}
+#keys{display:grid;grid-template-columns:repeat(3,88px);gap:10px}
+#keys button{height:70px;border-radius:12px;border:1px solid var(--line);background:var(--panel);font-size:1.7rem;cursor:pointer}
+#keys button:active{background:#222}
+#pairBack{background:none;border:none;color:var(--mute);font-size:1rem;cursor:pointer}
+
+/* ── 龍頭遙控 ── */
+#ctrl .pads{flex:1;display:flex;gap:6px;padding:6px}
+.pad{flex:1;border:3px solid var(--line);border-radius:18px;background:var(--panel);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;font-size:1.6rem;font-weight:700;color:var(--mute);cursor:pointer;touch-action:none}
+.pad svg{width:70%;max-width:220px;height:auto}
+.pad svg path{fill:none;stroke:currentColor;stroke-width:26;stroke-linecap:round;stroke-linejoin:round}
+.pad.on{border-color:var(--amber);color:var(--amber);background:var(--amber-dim)}
+.pad.on.blink{background:var(--amber);color:#000}
+.pad.hz{border-color:var(--red)}
+#ctrl .bar{display:flex;gap:6px;padding:0 6px 6px;align-items:stretch}
+#ctrl .bar button{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 12px;font-size:.95rem;cursor:pointer}
+#ctrl .bar button.act{border-color:var(--green);color:var(--green)}
+.stat{flex:1;display:flex;flex-direction:column;justify-content:center;font-size:.82rem;color:var(--mute);padding:4px 8px;border:1px solid var(--line);border-radius:10px;min-width:0}
+.stat b{font-weight:500}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#555;margin-right:6px;vertical-align:.05em}
+.dot.ok{background:var(--green)} .dot.wait{background:var(--amber)} .dot.bad{background:var(--red)}
+#cAlert{position:fixed;inset:0;border:16px solid var(--red);display:flex;align-items:flex-start;justify-content:center;pointer-events:none;animation:pulse .35s steps(2) infinite}
+#cAlert span{margin-top:calc(env(safe-area-inset-top,0px) + 18px);background:var(--red);color:#fff;font-size:1.6rem;font-weight:900;padding:8px 22px;border-radius:999px}
+@keyframes pulse{50%{border-color:transparent}}
+
+/* ── 車尾燈 ── */
+#tail{background:#000}
+#tail .lamp{flex:1;display:flex;align-items:center;justify-content:center;gap:2vw;padding:3vh 2vw;position:relative}
+#tail svg.arrow{flex:1;height:auto;max-height:90vh}
+#tail svg.arrow path{fill:none;stroke:var(--amber-dim);stroke-width:30;stroke-linecap:round;stroke-linejoin:round}
+#tail svg.arrow path.lit{stroke:var(--amber);filter:drop-shadow(0 0 10px var(--amber))}
+#arrowR{transform:scaleX(-1)}
+#pos{position:absolute;inset:8vh 8vw;border-radius:40px;background:radial-gradient(ellipse at center,rgba(255,42,26,.55),rgba(255,42,26,.08) 70%,transparent);}
+#tail.warn .lamp{animation:warn .3s steps(2) infinite}
+@keyframes warn{0%{background:#000}50%{background:var(--red-dim)}}
+#tail .tbar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:6px;padding:6px calc(env(safe-area-inset-right,0px) + 6px) calc(env(safe-area-inset-bottom,0px) + 6px) calc(env(safe-area-inset-left,0px) + 6px);opacity:.55;align-items:center;flex-wrap:wrap}
+#tail .tbar:hover,#tail .tbar:focus-within{opacity:1}
+#tail .tbar button{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 10px;font-size:.85rem;cursor:pointer}
+#tail .tbar button.act{border-color:var(--green);color:var(--green)}
+#tCode{font-size:.85rem;color:var(--mute);margin-right:auto}
+#tCode b{color:var(--amber);font-size:1.1rem;letter-spacing:.15em}
+#tPair{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#000;text-align:center;padding:20px}
+#tPair .code{font-size:clamp(4rem,22vw,9rem);font-weight:900;letter-spacing:.12em;color:var(--amber);line-height:1}
+#tPair p{margin:0;color:var(--mute);font-size:1.05rem}
+#cam{position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;width:min(46vw,320px);border:2px solid var(--green);border-radius:8px;overflow:hidden;background:#111}
+#cam video,#cam canvas{display:block;width:100%;height:auto}
+#cam canvas{position:absolute;inset:0;height:100%}
+#cam video{transform:scaleX(-1)}
+#cam .lbl{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);font-size:.75rem;padding:3px 6px;color:var(--green)}
+
+/* ── 開始按鈕（取得聲音、螢幕常亮、感測器權限都需要一次點擊） ── */
+.gate{position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;z-index:5}
+.gate button{border:2px solid var(--amber);background:var(--amber);color:#000;font-size:1.4rem;font-weight:900;padding:18px 40px;border-radius:999px;cursor:pointer}
+.gate p{margin:0;color:var(--mute);max-width:32ch;line-height:1.6}
+
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 80px);transform:translateX(-50%);background:#222;border:1px solid var(--line);padding:10px 16px;border-radius:999px;font-size:.95rem;z-index:9;max-width:90vw;text-align:center}
+@media (prefers-reduced-motion:reduce){#cAlert,#tail.warn .lamp{animation-duration:1s}}
+</style>
+</head>
+<body>
+
+<section id="home">
+  <h1>好轉燈</h1>
+  <p class="sub">兩支手機，一支放龍頭、一支放車尾<br>點一下就亮方向燈，轉完彎自動關</p>
+  <button class="big ctrl" id="goCtrl">我是龍頭手機<small>遙控：點左半邊左轉、點右半邊右轉</small></button>
+  <button class="big tail" id="goTail">我是車尾手機<small>方向燈：可用舊手機，固定在座墊下</small></button>
+  <button class="big" id="resume" hidden></button>
+</section>
+
+<section id="pair" hidden>
+  <h2>輸入車尾手機上的 4 位數</h2>
+  <p>車尾手機先選「我是車尾手機」，螢幕會顯示號碼</p>
+  <div id="digits"><span></span><span></span><span></span><span></span></div>
+  <div id="keys"></div>
+  <button id="pairBack" type="button">返回</button>
+</section>
+
+<section id="ctrl" hidden>
+  <div class="pads">
+    <button class="pad" id="padL" type="button" aria-label="左轉">
+      <svg viewBox="0 0 200 200" aria-hidden="true"><path d="M120 30 L50 100 L120 170"/><path d="M175 30 L105 100 L175 170"/></svg>左轉</button>
+    <button class="pad" id="padR" type="button" aria-label="右轉">
+      <svg viewBox="0 0 200 200" aria-hidden="true"><path d="M80 30 L150 100 L80 170"/><path d="M25 30 L95 100 L25 170"/></svg>右轉</button>
+  </div>
+  <div class="bar">
+    <div class="stat"><span><i class="dot" id="cDot"></i><b id="cLink">連線中…</b></span><span id="cHint">長按任一邊＝警示燈</span></div>
+    <button id="vBtn" type="button">語音</button>
+    <button id="aBtn" type="button" class="act">自動關燈</button>
+    <button id="cExit" type="button" aria-label="離開">離開</button>
+  </div>
+  <div id="cAlert" hidden><span>後方來車</span></div>
+</section>
+
+<section id="tail" hidden>
+  <div class="lamp">
+    <div id="pos"></div>
+    <svg class="arrow" id="arrowL" viewBox="0 0 300 200" aria-hidden="true" hidden>
+      <path data-i="0" d="M235 25 L175 100 L235 175"/><path data-i="1" d="M155 25 L95 100 L155 175"/><path data-i="2" d="M75 25 L15 100 L75 175"/></svg>
+    <svg class="arrow" id="arrowR" viewBox="0 0 300 200" aria-hidden="true" hidden>
+      <path data-i="0" d="M235 25 L175 100 L235 175"/><path data-i="1" d="M155 25 L95 100 L155 175"/><path data-i="2" d="M75 25 L15 100 L75 175"/></svg>
+  </div>
+  <div id="cam" hidden><video id="video" playsinline muted></video><canvas id="boxes"></canvas><div class="lbl" id="camLbl">AI 載入中…</div></div>
+  <div class="tbar">
+    <span id="tCode"></span>
+    <button id="sBtn" type="button" class="act">聲音</button>
+    <button id="aiBtn" type="button">AI 來車偵測</button>
+    <button id="camBtn" type="button" hidden>看鏡頭</button>
+    <button id="tExit" type="button">離開</button>
+  </div>
+  <div id="tPair"><p>在龍頭手機輸入這組號碼</p><div class="code" id="tBig"></div><p id="tWait">等待龍頭手機連線…</p></div>
+</section>
+
+<div class="gate" id="gate" hidden><button id="gateBtn" type="button">開始</button><p id="gateTxt"></p></div>
+<div id="toast" hidden></div>
+
+<script src="mqtt.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
