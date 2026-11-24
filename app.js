@@ -261,6 +261,7 @@ function startTail(code) {
   gate('車尾手機會保持螢幕常亮並發出方向燈聲。按下開始後，把手機橫放、螢幕朝後，固定在座墊下方。', async () => {
     fullscreen(); keepAwake();
     try { T.ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch (e) {}   // 在使用者點擊時先解鎖語音
     if (!T.link) T.link = makeLink(code, onTailMsg, s => { T.net = s; });
   });
 }
@@ -271,19 +272,39 @@ function onTailMsg(sub, d) {
     if (Date.now() - (d.t || 0) > 120000) return;   // 很久以前保留的狀態不採用
     if (!['left', 'right', 'hazard', 'off'].includes(d.s)) return;
     T.ctrlSeen = Date.now(); paired();
-    if (d.s !== T.state) { T.state = d.s; T.phase = 0; }
+    if (d.s !== T.state) { T.state = d.s; T.phase = 0; T.lastSay = 0; }
   }
 }
 function paired() { if (!T.paired) { T.paired = true; $('#tPair').hidden = true; } }
 
-function beep(f) {
-  if (!T.sound || !T.ac) return;
+// 方向燈聲音：答答（大聲滴答）／語音（腳踏車左轉、右轉）／嗶嗶（三連嗶）／關
+const SND = ['tick', 'voice', 'bbb', 'mute'];
+const SND_NAME = { tick: '答答', voice: '語音', bbb: '嗶嗶', mute: '關' };
+const SND_SAY = { left: '腳踏車左轉', right: '腳踏車右轉', hazard: '腳踏車注意' };
+T.snd = SND.includes(store.get('snd', 'tick')) ? store.get('snd', 'tick') : 'tick';
+T.lastSay = 0;
+function sndLabel() { $('#sBtn').textContent = '聲音：' + SND_NAME[T.snd]; $('#sBtn').classList.toggle('act', T.snd !== 'mute'); }
+
+function tone(f, at, dur, type = 'square') {
+  if (!T.ac) return;
   try {
-    const o = T.ac.createOscillator(), g = T.ac.createGain(), t = T.ac.currentTime;
-    o.frequency.value = f; o.type = 'square';
-    g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-    o.connect(g).connect(T.ac.destination); o.start(t); o.stop(t + 0.06);
+    if (T.ac.state === 'suspended') T.ac.resume();
+    const o = T.ac.createOscillator(), g = T.ac.createGain(), t = T.ac.currentTime + at;
+    o.frequency.value = f; o.type = type;
+    g.gain.setValueAtTime(1, t); g.gain.setValueAtTime(1, t + dur * 0.6); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g).connect(T.ac.destination); o.start(t); o.stop(t + dur + 0.02);
   } catch (e) {}
+}
+// 每個流水循環的第 0 格與第 4 格呼叫一次
+function turnSound(s, phase) {
+  if (T.snd === 'tick') {
+    if (phase === 0) { tone(1900, 0, 0.09); tone(950, 0, 0.09, 'triangle'); }
+    if (phase === 4) { tone(1400, 0, 0.09); tone(700, 0, 0.09, 'triangle'); }
+  } else if (T.snd === 'bbb') {
+    if (phase === 0) { tone(2600, 0, 0.08); tone(2600, 0.13, 0.08); tone(2600, 0.26, 0.08); }
+  } else if (T.snd === 'voice') {
+    if (phase === 0 && Date.now() - T.lastSay > 2600) { T.lastSay = Date.now(); say(SND_SAY[s]); }
+  }
 }
 
 // 流水箭頭：6 格一循環（約 660 毫秒，每分鐘 90 次），由內往外依序亮起
@@ -297,14 +318,20 @@ setInterval(() => {
   $('#pos').hidden = s !== 'off';
   const lit = T.phase < 3 ? T.phase + 1 : (T.phase === 3 ? 3 : 0);
   for (const svg of [L, R]) for (const p of svg.querySelectorAll('path')) p.classList.toggle('lit', +p.dataset.i < lit);
-  if (s !== 'off') { if (T.phase === 0) beep(1900); if (T.phase === 4) beep(1400); }
+  if (s !== 'off') turnSound(s, T.phase);
   T.phase = (T.phase + 1) % 6;
   $('#tail').classList.toggle('warn', T.carLvl > 0);
   if (!T.paired) $('#tWait').textContent = T.net === 'online' ? '已連上網路，等待龍頭手機輸入號碼…' : '連線網路中…';
 }, 110);
 setInterval(() => { if (!$('#tail').hidden && T.link) T.link.pub('hb/tail', { t: Date.now() }); }, 3000);
 
-$('#sBtn').onclick = () => { T.sound = !T.sound; $('#sBtn').classList.toggle('act', T.sound); };
+$('#sBtn').onclick = () => {
+  T.snd = SND[(SND.indexOf(T.snd) + 1) % SND.length]; store.set('snd', T.snd); sndLabel();
+  T.lastSay = 0; toast('方向燈聲音：' + SND_NAME[T.snd]);
+  if (T.snd === 'tick') tone(1900, 0, 0.09); else if (T.snd === 'bbb') { tone(2600, 0, 0.08); tone(2600, 0.13, 0.08); }
+  else if (T.snd === 'voice') say('腳踏車右轉');
+};
+sndLabel();
 $('#tExit').onclick = () => { location.href = location.pathname; };
 $('#camBtn').onclick = () => { T.cam = !T.cam; $('#cam').hidden = !T.cam; $('#camBtn').classList.toggle('act', T.cam); };
 $('#aiBtn').onclick = () => { T.ai ? stopAI() : startAI(); };
