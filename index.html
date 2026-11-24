@@ -56,6 +56,7 @@ button{font-family:var(--f);color:inherit}
 #ctrl .bar{display:flex;gap:6px;padding:0 6px 6px;align-items:stretch}
 #ctrl .bar button{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 12px;font-size:.95rem;cursor:pointer}
 #ctrl .bar button.act{border-color:var(--green);color:var(--green)}
+#ctrl .bar.tset button{flex:1;font-size:1.05rem;padding:12px 8px}
 .stat{flex:1;display:flex;flex-direction:column;justify-content:center;font-size:.82rem;color:var(--mute);padding:4px 8px;border:1px solid var(--line);border-radius:10px;min-width:0}
 .stat b{font-weight:500}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#555;margin-right:6px;vertical-align:.05em}
@@ -123,9 +124,13 @@ button{font-family:var(--f);color:inherit}
     <button class="pad" id="padR" type="button" aria-label="右轉">
       <svg viewBox="0 0 200 200" aria-hidden="true"><path d="M80 30 L150 100 L80 170"/><path d="M25 30 L95 100 L25 170"/></svg>右轉</button>
   </div>
+  <div class="bar tset">
+    <button id="tsBtn" type="button">車尾聲音：—</button>
+    <button id="tAiBtn" type="button">來車偵測：關</button>
+  </div>
   <div class="bar">
     <div class="stat"><span><i class="dot" id="cDot"></i><b id="cLink">連線中…</b></span><span id="cHint">長按任一邊＝警示燈</span></div>
-    <button id="vBtn" type="button">語音</button>
+    <button id="vBtn" type="button">聲控</button>
     <button id="aBtn" type="button" class="act">自動關燈</button>
     <button id="cExit" type="button" aria-label="離開">離開</button>
   </div>
@@ -155,6 +160,6 @@ button{font-family:var(--f);color:inherit}
 <div id="toast" hidden></div>
 
 <script src="mqtt.min.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>
