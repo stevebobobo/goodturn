@@ -1,5 +1,5 @@
 // 好轉燈：龍頭手機（遙控）與車尾手機（方向燈）透過 MQTT 互傳狀態。
-// 主題：goodturn/v1/<4位數>/state（龍頭→車尾，retain）、/alert（車尾→龍頭，AI 來車）、/hb/ctrl、/hb/tail（心跳）
+// 主題：goodturn/v1/<4位數>/state（龍頭→車尾，retain）、/alert（車尾→龍頭，AI 來車）、/hb/ctrl、/hb/tail（心跳）；/cfg（龍頭→車尾：聲音模式、AI 開關）、/note（車尾→龍頭：錯誤提示）
 'use strict';
 
 const BROKERS = ['wss://broker.hivemq.com:8884/mqtt', 'wss://broker.emqx.io:8084/mqtt'];
@@ -151,14 +151,17 @@ function renderCtrl() {
   L.classList.toggle('on', lOn); R.classList.toggle('on', rOn);
   L.classList.toggle('blink', lOn && C.blink); R.classList.toggle('blink', rOn && C.blink);
   L.classList.toggle('hz', s === 'hazard'); R.classList.toggle('hz', s === 'hazard');
-  const tailOk = Date.now() - C.tailSeen < 8000;
   const dot = $('#cDot'), lk = $('#cLink');
   if (C.net !== 'online') { dot.className = 'dot wait'; lk.textContent = '連線中…'; }
-  else if (!tailOk) { dot.className = 'dot bad'; lk.textContent = `找不到車尾手機（${C.code}）`; }
+  else if (!tailOk()) { dot.className = 'dot bad'; lk.textContent = `找不到車尾手機（${C.code}）`; }
   else { dot.className = 'dot ok'; lk.textContent = `車尾燈已連線（${C.code}）`; }
   $('#aBtn').classList.toggle('act', C.auto);
   $('#vBtn').classList.toggle('act', C.voice);
-  $('#vBtn').textContent = C.voice ? '語音：開' : '語音';
+  $('#vBtn').textContent = C.voice ? '聲控：開' : '聲控';
+  $('#tsBtn').textContent = '車尾聲音：' + (C.tsnd ? SND_NAME[C.tsnd] : '—');
+  $('#tAiBtn').textContent = '來車偵測：' + ({ on: '開', loading: '啟動中…', off: '關' }[C.tai]);
+  $('#tAiBtn').classList.toggle('act', C.tai === 'on');
+  $('#tsBtn').classList.toggle('act', C.tsnd && C.tsnd !== 'mute');
 }
 
 // 點一下切換、長按＝警示燈
@@ -183,8 +186,30 @@ $('#aBtn').onclick = () => { C.auto = !C.auto; say(C.auto ? '自動關燈開啟'
 $('#vBtn').onclick = () => { C.voice ? stopVoice() : startVoice(); renderCtrl(); };
 $('#cExit').onclick = () => { if (C.link) C.link.pub('state', { s: 'off', t: Date.now() }, true); setTimeout(() => location.href = location.pathname, 300); };
 
+// 遠端設定車尾：聲音模式、AI 來車偵測
+C.tsnd = null; C.tai = 'off';
+const tailOk = () => Date.now() - C.tailSeen < 8000;
+$('#tsBtn').onclick = () => {
+  if (!tailOk() || !C.link) return say('找不到車尾手機');
+  const n = SND[(SND.indexOf(C.tsnd || 'tick') + 1) % SND.length];
+  C.tsnd = n; C.link.pub('cfg', { snd: n, t: Date.now() });
+  say('車尾聲音，' + SND_NAME[n]); renderCtrl();
+};
+$('#tAiBtn').onclick = () => {
+  if (!tailOk() || !C.link) return say('找不到車尾手機');
+  const on = C.tai === 'off'; C.tai = on ? 'loading' : 'off';
+  C.link.pub('cfg', { ai: on, t: Date.now() });
+  say(on ? '開啟來車偵測' : '關閉來車偵測'); renderCtrl();
+};
+
 function onCtrlMsg(sub, d) {
-  if (sub === 'hb/tail') { C.tailSeen = Date.now(); return; }
+  if (sub === 'hb/tail') {
+    C.tailSeen = Date.now();
+    if (SND.includes(d.snd)) C.tsnd = d.snd;
+    if (['off', 'loading', 'on'].includes(d.ai)) C.tai = d.ai;
+    return;
+  }
+  if (sub === 'note' && Date.now() - (d.t || 0) < 10000) { say(d.msg); toast(d.msg, 3500); return; }
   if (sub === 'alert' && Date.now() - (d.t || 0) < 5000) {
     buzz([400, 120, 400]);
     say(d.lvl > 1 ? '後方來車，很近' : '後方來車');
@@ -268,6 +293,14 @@ function startTail(code) {
 
 function onTailMsg(sub, d) {
   if (sub === 'hb/ctrl') { T.ctrlSeen = Date.now(); paired(); return; }
+  if (sub === 'cfg') {   // 龍頭遠端設定：聲音模式、AI 開關
+    if (Date.now() - (d.t || 0) > 10000) return;
+    if (SND.includes(d.snd) && d.snd !== T.snd) setSnd(d.snd);
+    if (d.ai === true && !T.ai) startAI();
+    if (d.ai === false && T.ai) stopAI();
+    pubTailHb();
+    return;
+  }
   if (sub === 'state') {
     if (Date.now() - (d.t || 0) > 120000) return;   // 很久以前保留的狀態不採用
     if (!['left', 'right', 'hazard', 'off'].includes(d.s)) return;
@@ -323,14 +356,18 @@ setInterval(() => {
   $('#tail').classList.toggle('warn', T.carLvl > 0);
   if (!T.paired) $('#tWait').textContent = T.net === 'online' ? '已連上網路，等待龍頭手機輸入號碼…' : '連線網路中…';
 }, 110);
-setInterval(() => { if (!$('#tail').hidden && T.link) T.link.pub('hb/tail', { t: Date.now() }); }, 3000);
+setInterval(() => { if (!$('#tail').hidden) pubTailHb(); }, 3000);
 
-$('#sBtn').onclick = () => {
-  T.snd = SND[(SND.indexOf(T.snd) + 1) % SND.length]; store.set('snd', T.snd); sndLabel();
-  T.lastSay = 0; toast('方向燈聲音：' + SND_NAME[T.snd]);
-  if (T.snd === 'tick') tone(1900, 0, 0.09); else if (T.snd === 'bbb') { tone(2600, 0, 0.08); tone(2600, 0.13, 0.08); }
-  else if (T.snd === 'voice') say('腳踏車右轉');
-};
+// 車尾心跳附帶目前設定，龍頭據此顯示按鈕狀態
+function pubTailHb() { if (T.link) T.link.pub('hb/tail', { t: Date.now(), snd: T.snd, ai: T.aiState }); }
+function setSnd(m) {
+  T.snd = m; store.set('snd', m); sndLabel(); T.lastSay = 0;
+  toast('方向燈聲音：' + SND_NAME[m]);
+  if (m === 'tick') tone(1900, 0, 0.09); else if (m === 'bbb') { tone(2600, 0, 0.08); tone(2600, 0.13, 0.08); }
+  else if (m === 'voice') say('腳踏車右轉');
+  pubTailHb();
+}
+$('#sBtn').onclick = () => setSnd(SND[(SND.indexOf(T.snd) + 1) % SND.length]);
 sndLabel();
 $('#tExit').onclick = () => { location.href = location.pathname; };
 $('#camBtn').onclick = () => { T.cam = !T.cam; $('#cam').hidden = !T.cam; $('#camBtn').classList.toggle('act', T.cam); };
@@ -344,23 +381,30 @@ function loadScript(src) {
     document.head.append(s);
   });
 }
+T.aiState = 'off';   // off／loading／on
 async function startAI() {
-  T.ai = true; $('#aiBtn').classList.add('act'); $('#aiBtn').textContent = 'AI 載入中…';
+  T.ai = true; T.aiState = 'loading'; pubTailHb();
+  $('#aiBtn').classList.add('act'); $('#aiBtn').textContent = 'AI 載入中…';
   $('#camBtn').hidden = false; $('#camLbl').textContent = 'AI 載入中…';
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
+    if (!T.ai) { stream.getTracks().forEach(t => t.stop()); return; }   // 等權限時已被關掉
     const v = $('#video'); v.srcObject = stream; await v.play();
     await loadScript(TF_URL); await loadScript(SSD_URL);
     if (!T.model) T.model = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+    if (!T.ai) return;   // 載入期間被關掉
+    T.aiState = 'on'; pubTailHb();
     $('#aiBtn').textContent = 'AI 偵測中';
     loopAI();
   } catch (e) {
-    toast('AI 無法啟動：' + (e.name === 'NotAllowedError' ? '沒有相機權限' : e.message), 3500);
+    const why = e.name === 'NotAllowedError' ? '車尾手機沒有相機權限' : '來車偵測載入失敗';
+    toast('AI 無法啟動：' + why, 3500);
+    if (T.link) T.link.pub('note', { msg: why, t: Date.now() });
     stopAI();
   }
 }
 function stopAI() {
-  T.ai = false; T.carLvl = 0;
+  T.ai = false; T.carLvl = 0; T.aiState = 'off'; pubTailHb();
   $('#aiBtn').classList.remove('act'); $('#aiBtn').textContent = 'AI 來車偵測';
   const v = $('#video'); if (v.srcObject) { v.srcObject.getTracks().forEach(t => t.stop()); v.srcObject = null; }
   $('#cam').hidden = true; $('#camBtn').hidden = true; T.cam = false;
