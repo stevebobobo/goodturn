@@ -17,14 +17,18 @@ let toastT;
 function toast(msg, ms = 2200) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, ms); }
 
 // ── 手機能力：語音、震動、螢幕常亮、全螢幕 ─────────────────────────
-let lastSpeak = 0;
+let lastSpeak = 0, speaking = false, sayId = 0;
+// 講話時先關麥克風，講完再開，避免聲控聽到自己的提示語
 function say(text) {
   try {
+    const id = ++sayId;
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'zh-TW'; u.rate = 1.1;
-    speechSynthesis.cancel(); speechSynthesis.speak(u);
-    lastSpeak = Date.now();
-  } catch (e) {}
+    u.onend = u.onerror = () => { if (id !== sayId) return; speaking = false; lastSpeak = Date.now(); voiceResume(); };
+    speechSynthesis.cancel();
+    speaking = true; lastSpeak = Date.now(); voicePause();
+    speechSynthesis.speak(u);
+  } catch (e) { speaking = false; }
 }
 function buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} }
 let wakeWanted = false;
@@ -238,38 +242,55 @@ setInterval(() => {
     if (Date.now() - C.onAt > 30000) { setState('off', 'auto'); return; }
   }
   if (C.tick % 12 === 0 && C.link) C.link.pub('hb/ctrl', { t: Date.now() });
+  // 聲控看門狗：語音播完卻沒收到結束事件，或麥克風停了沒重開，就補開
+  if (C.voice) {
+    if (speaking && !speechSynthesis.speaking && Date.now() - lastSpeak > 4000) { speaking = false; }
+    if (!speaking && !C.recOn && Date.now() - Math.max(C.recEnd || 0, lastSpeak) > 1500) voiceListen();
+  }
   renderCtrl();
 }, 250);
 
 // 語音指令：「左轉」「右轉」「取消／關燈」「警示」
+// 取句子裡「最後出現」的指令詞，例如「左轉…不對右轉」→ 右轉
+const CMD_WORDS = [[/取消|關|停|好了|結束/g, 'off'], [/警示|危險|雙黃|閃/g, 'hazard'], [/左/g, 'left'], [/右/g, 'right']];
 function parseCmd(t) {
-  if (/取消|關|停|好了|結束/.test(t)) return 'off';
-  if (/警示|危險|雙黃|閃/.test(t)) return 'hazard';
-  if (/左/.test(t)) return 'left';
-  if (/右/.test(t)) return 'right';
-  return null;
+  let best = null, at = -1;
+  for (const [re, cmd] of CMD_WORDS) for (const m of t.matchAll(re)) if (m.index > at) { at = m.index; best = cmd; }
+  return best;
 }
-function startVoice() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { toast('這支手機的瀏覽器不支援語音辨識，請改用 Chrome'); return; }
-  const r = new SR();
+const SRClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+function voicePause() {
+  if (!C.voice) return;
+  clearTimeout(C.vT);
+  const r = C.rec; C.rec = null; C.recOn = false;   // 先解除關聯，舊辨識的結束事件就不會干擾
+  try { r && r.abort(); } catch (e) {}
+}
+function voiceResume() { if (!C.voice) return; clearTimeout(C.vT); C.vT = setTimeout(voiceListen, 350); }
+// 每次都開一個新的辨識，執行一個指令後就重來，避免 Android 把前後句黏在一起
+function voiceListen() {
+  if (!C.voice || speaking || C.recOn) return;
+  const r = new SRClass();
   r.lang = 'zh-TW'; r.continuous = true; r.interimResults = true;
   r.onresult = e => {
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const cmd = parseCmd(e.results[i][0].transcript);
-      // 忽略自己剛講出的提示語音，避免重複觸發
-      if (!cmd || cmd === C.state || Date.now() - lastSpeak < 1200 || Date.now() - C.lastVoice < 1500) continue;
-      C.lastVoice = Date.now();
-      setState(cmd, 'voice');
-    }
+    if (r !== C.rec || speaking) return;
+    const cmd = parseCmd(e.results[e.results.length - 1][0].transcript);
+    if (!cmd || cmd === C.state) return;
+    C.lastVoice = Date.now();
+    setState(cmd, 'voice');   // setState 會講話 → 自動關麥克風 → 講完開新的辨識
   };
-  r.onend = () => { if (C.voice) { try { r.start(); } catch (e) {} } };
-  r.onerror = e => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { C.voice = false; renderCtrl(); toast('沒有麥克風權限，語音功能已關閉'); } };
-  try { r.start(); } catch (e) {}
-  C.rec = r; C.voice = true;
-  say('請說左轉、右轉或取消');
+  r.onend = () => { if (r === C.rec) { C.recOn = false; C.recEnd = Date.now(); if (!speaking) voiceResume(); } };
+  r.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { C.voice = false; renderCtrl(); toast('沒有麥克風權限，聲控已關閉'); }
+  };
+  C.rec = r; C.recOn = true;
+  try { r.start(); } catch (e) { C.rec = null; C.recOn = false; C.recEnd = Date.now(); }
 }
-function stopVoice() { C.voice = false; try { C.rec && C.rec.stop(); } catch (e) {} say('語音關閉'); }
+function startVoice() {
+  if (!SRClass) { toast('這支手機的瀏覽器不支援語音辨識，請改用 Chrome'); return; }
+  C.voice = true; C.recOn = false;
+  say('聲控開啟');   // 不含指令詞；講完才開始聽
+}
+function stopVoice() { C.voice = false; clearTimeout(C.vT); try { C.rec && C.rec.abort(); } catch (e) {} C.rec = null; C.recOn = false; say('聲控關閉'); }
 
 // ═══ 車尾手機 ═══════════════════════════════════════════════════
 const T = { state: 'off', code: '', link: null, ctrlSeen: 0, sound: true, ai: false, cam: false,
@@ -370,6 +391,8 @@ function setSnd(m) {
 $('#sBtn').onclick = () => setSnd(SND[(SND.indexOf(T.snd) + 1) % SND.length]);
 sndLabel();
 $('#tExit').onclick = () => { location.href = location.pathname; };
+// 跳出權限視窗等情況會退出全螢幕，點一下燈區就回到全螢幕
+$('#tail .lamp').addEventListener('click', () => { if (!document.fullscreenElement) fullscreen(); });
 $('#camBtn').onclick = () => { T.cam = !T.cam; $('#cam').hidden = !T.cam; $('#camBtn').classList.toggle('act', T.cam); };
 $('#aiBtn').onclick = () => { T.ai ? stopAI() : startAI(); };
 
